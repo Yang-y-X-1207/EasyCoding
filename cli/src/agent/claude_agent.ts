@@ -1,62 +1,18 @@
 /**
  * Claude Code Style Local CLI
  * Direct AI chat with local file operations
+ * Supports: OpenAI, Anthropic, Google Gemini, Azure
  */
 
 import * as readline from "readline";
 import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
+import { LLMProviderClient, loadProviderFromEnv, loadFromEnvFile, ProviderConfig } from "./llm_provider";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
-}
-
-// ============ Claude API Client ============
-
-class ClaudeClient {
-  private apiKey: string;
-  private model: string;
-
-  constructor(apiKey: string, model = "claude-sonnet-4-7") {
-    this.apiKey = apiKey;
-    this.model = model;
-  }
-
-  async send(messages: Message[], systemPrompt: string): Promise<string> {
-    const url = "https://api.anthropic.com/v1/messages";
-
-    const headers = {
-      "x-api-key": this.apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    };
-
-    const payload = {
-      model: this.model,
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: messages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })),
-    };
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const err = await response.json() as { error?: { message?: string } };
-      throw new Error(err.error?.message || `API Error: ${response.status}`);
-    }
-
-    const data = await response.json() as { content?: Array<{ text: string }> };
-    return data.content?.[0]?.text || "⚠️ 无响应";
-  }
 }
 
 // ============ Tool Handlers ============
@@ -96,7 +52,17 @@ class ToolHandler {
       return this.listDir(dirPath);
     }
 
-    return null; // Not a tool command
+    // Grep search: grep <pattern> [path]
+    if (trimmed.startsWith("grep ")) {
+      const parts = trimmed.slice(4).trim().split(" ");
+      if (parts.length >= 1) {
+        const pattern = parts[0];
+        const searchPath = parts[1] || ".";
+        return this.grep(pattern, searchPath);
+      }
+    }
+
+    return null;
   }
 
   private readFile(filePath: string): string {
@@ -104,7 +70,7 @@ class ToolHandler {
     try {
       const content = fs.readFileSync(fullPath, "utf-8");
       const lines = content.split("\n").length;
-      return `📄 ${filePath} (${lines} 行)\n\`\`\`\n${content.slice(0, 2000)}${content.length > 2000 ? "\n...(截断)" : ""}\n\`\`\``;
+      return `📄 ${filePath} (${lines} 行)\n\`\`\`\n${content.slice(0, 3000)}${content.length > 3000 ? "\n...(截断)" : ""}\n\`\`\``;
     } catch (e: any) {
       return `⚠️ 无法读取: ${e.message}`;
     }
@@ -151,6 +117,19 @@ class ToolHandler {
     }
   }
 
+  private grep(pattern: string, searchPath: string): string {
+    try {
+      const fullPath = this.resolvePath(searchPath);
+      const result = execSync(`grep -rn "${pattern}" "${fullPath}" --include="*.ts" --include="*.js" --include="*.py" --include="*.java" 2>/dev/null | head -30`, {
+        encoding: "utf-8",
+        timeout: 10000,
+      });
+      return result || `没有找到匹配 "${pattern}" 的内容`;
+    } catch (e: any) {
+      return `⚠️ 搜索失败: ${e.message}`;
+    }
+  }
+
   private resolvePath(filePath: string): string {
     return path.isAbsolute(filePath) ? filePath : path.join(this.projectPath, filePath);
   }
@@ -161,31 +140,60 @@ class ToolHandler {
 export async function runDirectChat(
   projectPath: string = ".",
   apiKey?: string,
-  model: string = "claude-sonnet-4-7"
+  model?: string
 ): Promise<void> {
-  // Get API key
-  let key = apiKey || process.env.ANTHROPIC_API_KEY || "";
+  // Load config from env
+  const envConfig = loadFromEnvFile(path.join(projectPath, ".env"));
 
-  // Try to load from .env
-  if (!key) {
-    const envPath = path.join(projectPath, ".env");
-    if (fs.existsSync(envPath)) {
-      const envContent = fs.readFileSync(envPath, "utf-8");
-      const match = envContent.match(/ANTHROPIC_API_KEY\s*=\s*(.+)/);
-      if (match) key = match[1].trim();
+  // Merge env variables into process.env
+  for (const [key, value] of Object.entries(envConfig)) {
+    if (!process.env[key]) {
+      process.env[key] = value;
     }
   }
 
-  if (!key) {
-    console.log("❌ 请设置 ANTHROPIC_API_KEY");
-    console.log("   export ANTHROPIC_API_KEY=sk-ant-xxxxx");
-    console.log("   或在 .env 文件中设置 ANTHROPIC_API_KEY=sk-ant-xxxxx");
+  // Try to get provider config
+  let config: ProviderConfig | null = null;
+
+  // Check command line args first
+  if (apiKey) {
+    // User provided API key, try to detect provider
+    if (apiKey.startsWith("sk-")) {
+      config = { provider: "anthropic", apiKey, model: model || "claude-sonnet-4-7" };
+    } else if (apiKey.startsWith("sk-")) {
+      config = { provider: "openai", apiKey, model: model || "gpt-4o" };
+    } else {
+      config = { provider: "anthropic", apiKey, model: model || "claude-sonnet-4-7" };
+    }
+  } else {
+    config = loadProviderFromEnv();
+  }
+
+  if (!config) {
+    console.log("❌ 未找到 LLM API 配置");
+    console.log("");
+    console.log("请设置以下任一环境变量:");
+    console.log("  OpenAI:      export OPENAI_API_KEY=sk-xxxxx");
+    console.log("  Anthropic:   export ANTHROPIC_API_KEY=sk-ant-xxxxx");
+    console.log("  Google:      export GEMINI_API_KEY=xxxxx");
+    console.log("  Azure:      export AZURE_OPENAI_KEY=xxxxx");
+    console.log("");
+    console.log("或创建 .env 文件:");
+    console.log("  OPENAI_API_KEY=sk-xxxxx");
+    console.log("  ANTHROPIC_API_KEY=sk-ant-xxxxx");
     process.exit(1);
   }
 
-  const client = new ClaudeClient(key, model);
+  const client = new LLMProviderClient(config);
   const tools = new ToolHandler(projectPath);
   const messages: Message[] = [];
+
+  const providerNames: Record<string, string> = {
+    openai: "OpenAI GPT",
+    anthropic: "Anthropic Claude",
+    gemini: "Google Gemini",
+    azure: "Azure OpenAI",
+  };
 
   const systemPrompt = `你是 Coding-CLI，一个专业的 AI 编程助手。
 
@@ -194,16 +202,18 @@ export async function runDirectChat(
 - 写入文件: write <path> <content>
 - 执行命令: !<command>
 - 列目录: ls [path]
+- 搜索代码: grep <pattern> [path]
 
 请用中文回答。帮助用户完成代码编写、修改、分析等任务。
 当前项目: ${path.resolve(projectPath)}`;
 
-  console.log("🤖 Coding-CLI Agent (Claude Code Style)");
+  console.log("🤖 Coding-CLI Agent");
   console.log(`📁 项目: ${path.resolve(projectPath)}`);
-  console.log("🔑 API: 已配置");
+  console.log(`🔧 Provider: ${providerNames[config.provider] || config.provider}`);
+  console.log(`📝 Model: ${config.model}`);
   console.log("");
-  console.log("命令: exit=退出 | clear=清屏 | history=历史");
-  console.log("工具: read <file> | write <file> <content> | !<cmd> | ls [dir]");
+  console.log("命令: exit=退出 | clear=清屏 | history=历史 | help=帮助");
+  console.log("工具: read <file> | write <file> | !<cmd> | ls [dir] | grep <pattern>");
   console.log("---\n");
 
   const rl = readline.createInterface({
@@ -219,11 +229,11 @@ export async function runDirectChat(
 
   // Introduction
   try {
-    const intro = await client.send(
+    const intro = await client.chat(
       [{ role: "user", content: "用简短的话介绍你自己" }],
       systemPrompt
     );
-    console.log(`🤖 ${intro}\n`);
+    console.log(`🤖 ${intro.content}\n`);
   } catch (e: any) {
     console.log(`❌ 连接失败: ${e.message}`);
     process.exit(1);
@@ -260,13 +270,14 @@ export async function runDirectChat(
       if (lower === "help") {
         console.log(`
 📋 可用命令:
-   exit      - 退出
-   clear     - 清屏
-   history   - 显示历史
-   read <f>  - 读取文件
-   write <f> - 写入文件
-   !<cmd>    - 执行命令
-   ls [dir]  - 列目录
+   exit        - 退出
+   clear       - 清屏
+   history     - 显示历史
+   read <f>    - 读取文件
+   write <f>   - 写入文件
+   !<cmd>      - 执行命令
+   ls [dir]    - 列目录
+   grep <pat>  - 搜索代码
 `);
         continue;
       }
@@ -280,13 +291,13 @@ export async function runDirectChat(
         continue;
       }
 
-      // Send to Claude
+      // Send to LLM
       console.log("\n🤖 AI 思考中...\n");
       try {
         messages.push({ role: "user", content: input });
-        const response = await client.send(messages, systemPrompt);
-        console.log(`🤖 ${response}\n`);
-        messages.push({ role: "assistant", content: response });
+        const response = await client.chat(messages, systemPrompt);
+        console.log(`🤖 ${response.content}\n`);
+        messages.push({ role: "assistant", content: response.content });
       } catch (e: any) {
         console.log(`❌ 错误: ${e.message}\n`);
       }
@@ -297,4 +308,4 @@ export async function runDirectChat(
 }
 
 // Export for use in index.ts
-export { ClaudeClient, ToolHandler };
+export { LLMProviderClient, loadProviderFromEnv };
