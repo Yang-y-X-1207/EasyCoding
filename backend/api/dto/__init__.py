@@ -1,1 +1,1 @@
-# DTO module
+# DTOs module

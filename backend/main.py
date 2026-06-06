@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import routers
-from api.routes import chat, health, session, task, channel, workspace
+from api.routes import chat, health, session, task, channel, workspace, git
 from infrastructure.adapters import (
     ChannelDispatcher,
     DiscordAdapter,
@@ -80,8 +80,8 @@ def _init_channels():
 
 app = FastAPI(
     title="Coding-CLI Backend",
-    description="AI Coding Assistant CLI Backend with Multi-Channel + Workspace Isolation",
-    version="0.6.0",
+    description="AI Coding Assistant CLI Backend with Multi-Channel + Workspace + Git" Isolation",
+    version="0.7.0",
     lifespan=lifespan,
 )
 
@@ -100,6 +100,7 @@ app.include_router(session.router, prefix="/api/v1", tags=["session"])
 app.include_router(task.router, prefix="/api/v1", tags=["task"])
 app.include_router(channel.router, prefix="/api/v1", tags=["channel"])
 app.include_router(workspace.router, prefix="/api/v1", tags=["workspace"])
+app.include_router(git.router, prefix="/api/v1", tags=["git"])
 app.include_router(health.router, tags=["health"])
 
 
