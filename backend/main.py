@@ -1,6 +1,6 @@
 """
 Coding-CLI Backend - FastAPI Entry Point
-Phase 5: Multi-channel support
+Phase 6: Workspace isolation
 """
 import logging
 import os
@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import routers
-from api.routes import chat, health, session, task, channel
+from api.routes import chat, health, session, task, channel, workspace
 from infrastructure.adapters import (
     ChannelDispatcher,
     DiscordAdapter,
@@ -31,10 +31,8 @@ _dispatcher = ChannelDispatcher()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
-    # Initialize channel adapters based on environment
     await _init_channels()
     yield
-    # Shutdown
     await _dispatcher.stop_all()
 
 
@@ -82,8 +80,8 @@ def _init_channels():
 
 app = FastAPI(
     title="Coding-CLI Backend",
-    description="AI Coding Assistant CLI Backend with Multi-Channel Support",
-    version="0.5.0",
+    description="AI Coding Assistant CLI Backend with Multi-Channel + Workspace Isolation",
+    version="0.6.0",
     lifespan=lifespan,
 )
 
@@ -101,6 +99,7 @@ app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(session.router, prefix="/api/v1", tags=["session"])
 app.include_router(task.router, prefix="/api/v1", tags=["task"])
 app.include_router(channel.router, prefix="/api/v1", tags=["channel"])
+app.include_router(workspace.router, prefix="/api/v1", tags=["workspace"])
 app.include_router(health.router, tags=["health"])
 
 
@@ -108,7 +107,7 @@ app.include_router(health.router, tags=["health"])
 async def root():
     return {
         "message": "Coding-CLI Backend",
-        "version": "0.5.0",
+        "version": "0.6.0",
         "channels": _dispatcher.list_channels(),
     }
 
