@@ -1,6 +1,6 @@
 /**
  * Gateway Client
- * Phase 3: SSE streaming support
+ * Phase 4: Task queue support
  */
 
 import axios, { AxiosInstance, AxiosResponse } from "axios";
@@ -32,6 +32,28 @@ export interface ChatStreamEvent {
   data: any;
 }
 
+export interface EnqueueResult {
+  success: boolean;
+  task_id: string | null;
+  message: string;
+  queue_position: number | null;
+  status: string;
+}
+
+export interface TaskStatus {
+  task_id: string;
+  status: string;
+  message: string;
+  queue_position: number | null;
+}
+
+export interface QueueStatus {
+  queue_length: number;
+  processing: string | null;
+  completed_recent: number;
+  signatures_active: number;
+}
+
 export class GatewayClient extends EventEmitter {
   private client: AxiosInstance;
 
@@ -45,6 +67,8 @@ export class GatewayClient extends EventEmitter {
       },
     });
   }
+
+  // ============ Chat Methods ============
 
   async sendChat(request: ChatRequest): Promise<ChatResponse> {
     const response: AxiosResponse<ChatResponse> = await this.client.post<ChatResponse>(
@@ -79,10 +103,7 @@ export class GatewayClient extends EventEmitter {
             const jsonStr = dataStr.replace("data:", "").trim();
             try {
               const data = JSON.parse(jsonStr);
-              const streamEvent: ChatStreamEvent = {
-                event: eventName,
-                data,
-              };
+              const streamEvent: ChatStreamEvent = { event: eventName, data };
               onEvent(streamEvent);
               this.emit(eventName, data);
             } catch (e) {
@@ -98,6 +119,8 @@ export class GatewayClient extends EventEmitter {
       response.data.on("error", reject);
     });
   }
+
+  // ============ Session Methods ============
 
   async createSession(accountId: string, channel: string = "cli"): Promise<SessionInfo> {
     const response = await this.client.post<SessionInfo>("/api/v1/sessions", {
@@ -121,6 +144,45 @@ export class GatewayClient extends EventEmitter {
   async deleteSession(sessionId: string): Promise<void> {
     await this.client.delete(`/api/v1/sessions/${sessionId}`);
   }
+
+  // ============ Task Queue Methods ============
+
+  async enqueueTask(params: {
+    session_id: string;
+    account_id: string;
+    channel?: string;
+    agent_id?: string;
+    message: string;
+    action?: string;
+    priority?: number;
+  }): Promise<EnqueueResult> {
+    const response = await this.client.post<EnqueueResult>(
+      "/api/v1/tasks/enqueue",
+      params
+    );
+    return response.data;
+  }
+
+  async getTaskStatus(taskId: string): Promise<TaskStatus> {
+    const response = await this.client.get<TaskStatus>(
+      `/api/v1/tasks/${taskId}/status`
+    );
+    return response.data;
+  }
+
+  async getTaskQueueStatus(): Promise<QueueStatus> {
+    const response = await this.client.get<QueueStatus>("/api/v1/tasks/queue/status");
+    return response.data;
+  }
+
+  async cancelTask(taskId: string, accountId: string): Promise<void> {
+    await this.client.post("/api/v1/tasks/cancel", {
+      task_id: taskId,
+      account_id: accountId,
+    });
+  }
+
+  // ============ Health Check ============
 
   async healthCheck(): Promise<{ status: string }> {
     const response = await this.client.get("/health");

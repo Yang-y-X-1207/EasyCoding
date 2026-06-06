@@ -25,6 +25,7 @@ app.add_middleware(
 # Include routers
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(session.router, prefix="/api/v1", tags=["session"])
+app.include_router(task.router, prefix="/api/v1", tags=["task"])
 app.include_router(health.router, tags=["health"])
 
 
