@@ -47,3 +47,24 @@ class BranchRequest(BaseModel):
     """Request to create branch"""
     name: str | None = None
     task_id: str | None = None
+
+
+# Phase 8: PR Creation
+
+class PRCreateRequest(BaseModel):
+    """Request to create Pull Request"""
+    provider: str = "github"  # github or gitlab
+    repo: str = ""  # owner/repo for GitHub, project ID for GitLab
+    base_branch: str = "main"
+    title: str = ""
+    description: str = ""
+    task_id: str | None = None
+    reviewers: list[str] = []
+
+
+class PRCreateResponse(BaseModel):
+    """Response after PR creation"""
+    success: bool
+    pr_url: str = ""
+    pr_number: int = 0
+    message: str = ""
