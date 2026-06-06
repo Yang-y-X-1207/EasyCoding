@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Status
 
-**Phase 1 not started yet** - Minimal viable system (CLI <-> Backend communication) is the first milestone.
+**Phase 1 completed** - Minimal viable system (CLI <-> Backend communication) is working.
+**Next**: Phase 2 - Basic Memory storage
 
 ## Project Overview
 
