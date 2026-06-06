@@ -5,7 +5,7 @@ Phase 6: File-based workspace persistence
 import json
 from pathlib import Path
 
-from backend.domain.models.workspace import Workspace, WorkspaceStatus
+from domain.models.workspace import Workspace, WorkspaceStatus
 
 
 class WorkspaceStore:
@@ -17,7 +17,7 @@ class WorkspaceStore:
     def __init__(self, base_path: str = "workspace"):
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
-        self.index_file = self.base_path / "workspaces.json")
+        self.index_file = self.base_path / "workspaces.json"
 
     def _load_index(self) -> dict[str, Workspace]:
         """Load workspace index"""

@@ -31,7 +31,7 @@ _dispatcher = ChannelDispatcher()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
-    await _init_channels()
+    _init_channels()
     yield
     await _dispatcher.stop_all()
 

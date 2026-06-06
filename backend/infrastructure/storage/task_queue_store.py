@@ -6,8 +6,9 @@ import json
 from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
-from backend.domain.models.task import Task, TaskSignature, TaskStatus
+from domain.models.task import Task, TaskSignature, TaskStatus
 
 
 class TaskQueueStore:
