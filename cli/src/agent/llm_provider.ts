@@ -1,9 +1,9 @@
 /**
  * LLM Provider - Multi-vendor support
- * Supports: OpenAI, Anthropic, Google Gemini, Azure OpenAI
+ * Supports: OpenAI, Anthropic, Google Gemini, Azure OpenAI, MiniMax
  */
 
-export type LLMProvider = "openai" | "anthropic" | "gemini" | "azure";
+export type LLMProvider = "openai" | "anthropic" | "gemini" | "azure" | "minimax";
 
 interface LLMConfig {
   provider: LLMProvider;
@@ -39,6 +39,9 @@ export class LLMProviderClient {
         case "azure":
           config.model = "gpt-4";
           break;
+        case "minimax":
+          config.model = "abab5.5-chat";
+          break;
       }
     }
     this.config = config;
@@ -54,6 +57,8 @@ export class LLMProviderClient {
         return this.geminiChat(messages, system);
       case "azure":
         return this.azureChat(messages, system);
+      case "minimax":
+        return this.minimaxChat(messages, system);
       default:
         throw new Error(`Unknown provider: ${this.config.provider}`);
     }
@@ -236,6 +241,51 @@ export class LLMProviderClient {
       content: data.choices?.[0]?.message?.content || "⚠️ 无响应",
     };
   }
+
+  // ============ MiniMax ============
+
+  private async minimaxChat(
+    messages: Array<{ role: string; content: string }>,
+    system?: string
+  ): Promise<LLMResponse> {
+    // MiniMax uses OpenAI-compatible API
+    const url = this.config.baseUrl || "https://api.minimax.chat/v1/chat/completions";
+
+    const allMessages = system
+      ? [{ role: "system", content: system }, ...messages]
+      : messages;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${this.config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: this.config.model || "MiniMax-01",
+        messages: allMessages,
+        max_tokens: 4096,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json() as { error?: { message?: string } };
+      throw new Error(err.error?.message || `MiniMax API Error: ${response.status}`);
+    }
+
+    const data = await response.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+
+    return {
+      content: data.choices?.[0]?.message?.content || "⚠️ 无响应",
+      usage: {
+        input_tokens: data.usage?.prompt_tokens,
+        output_tokens: data.usage?.completion_tokens,
+      },
+    };
+  }
 }
 
 // ============ Config Loader ============
@@ -289,6 +339,17 @@ export function loadProviderFromEnv(): ProviderConfig | null {
       apiKey: azureKey,
       model: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4",
       baseUrl: azureUrl,
+    };
+  }
+
+  // Check MiniMax
+  const minimaxKey = process.env.MINIMAX_API_KEY || process.env.MINIMAX_API_TOKEN;
+  if (minimaxKey) {
+    return {
+      provider: "minimax",
+      apiKey: minimaxKey,
+      model: process.env.MINIMAX_MODEL || "abab5.5-chat",
+      baseUrl: process.env.MINIMAX_BASE_URL || "https://api.minimax.chat/v1/chat/completions",
     };
   }
 

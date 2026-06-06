@@ -173,14 +173,16 @@ export async function runDirectChat(
     console.log("❌ 未找到 LLM API 配置");
     console.log("");
     console.log("请设置以下任一环境变量:");
-    console.log("  OpenAI:      export OPENAI_API_KEY=sk-xxxxx");
-    console.log("  Anthropic:   export ANTHROPIC_API_KEY=sk-ant-xxxxx");
+    console.log("  OpenAI:     export OPENAI_API_KEY=sk-xxxxx");
+    console.log("  Anthropic:  export ANTHROPIC_API_KEY=sk-ant-xxxxx");
     console.log("  Google:      export GEMINI_API_KEY=xxxxx");
-    console.log("  Azure:      export AZURE_OPENAI_KEY=xxxxx");
+    console.log("  Azure:       export AZURE_OPENAI_KEY=xxxxx");
+    console.log("  MiniMax:     export MINIMAX_API_KEY=sk-cp-xxxxx");
     console.log("");
     console.log("或创建 .env 文件:");
     console.log("  OPENAI_API_KEY=sk-xxxxx");
     console.log("  ANTHROPIC_API_KEY=sk-ant-xxxxx");
+    console.log("  MINIMAX_API_KEY=sk-cp-xxxxx");
     process.exit(1);
   }
 
