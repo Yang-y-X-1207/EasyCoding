@@ -1,9 +1,10 @@
 /**
  * Gateway Client
- * Phase 2: Session-aware HTTP client to call Backend API
+ * Phase 3: SSE streaming support
  */
 
-import axios, { AxiosInstance } from "axios";
+import axios, { AxiosInstance, AxiosResponse } from "axios";
+import { EventEmitter } from "events";
 import { ChatRequest, ChatResponse } from "../types";
 
 export interface SessionInfo {
@@ -26,13 +27,19 @@ export interface SessionListItem {
   updated_at: string;
 }
 
-export class GatewayClient {
+export interface ChatStreamEvent {
+  event: string;
+  data: any;
+}
+
+export class GatewayClient extends EventEmitter {
   private client: AxiosInstance;
 
   constructor(baseURL: string) {
+    super();
     this.client = axios.create({
       baseURL,
-      timeout: 30000,
+      timeout: 60000,
       headers: {
         "Content-Type": "application/json",
       },
@@ -40,8 +47,56 @@ export class GatewayClient {
   }
 
   async sendChat(request: ChatRequest): Promise<ChatResponse> {
-    const response = await this.client.post<ChatResponse>("/api/v1/chat", request);
+    const response: AxiosResponse<ChatResponse> = await this.client.post<ChatResponse>(
+      "/api/v1/chat",
+      request
+    );
     return response.data;
+  }
+
+  async sendChatStream(
+    request: ChatRequest,
+    onEvent: (event: ChatStreamEvent) => void
+  ): Promise<void> {
+    const response = await this.client.post("/api/v1/chat/stream", request, {
+      responseType: "stream",
+    });
+
+    let buffer = "";
+
+    response.data.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (line.startsWith("event:") && line.includes(":")) {
+          const [eventPart, dataPart] = line.split(":", 2);
+          const eventName = eventPart.replace("event:", "").trim();
+          const dataStr = dataPart.trim();
+
+          if (dataStr.startsWith("data:")) {
+            const jsonStr = dataStr.replace("data:", "").trim();
+            try {
+              const data = JSON.parse(jsonStr);
+              const streamEvent: ChatStreamEvent = {
+                event: eventName,
+                data,
+              };
+              onEvent(streamEvent);
+              this.emit(eventName, data);
+            } catch (e) {
+              // Skip invalid JSON
+            }
+          }
+        }
+      }
+    });
+
+    return new Promise((resolve, reject) => {
+      response.data.on("end", resolve);
+      response.data.on("error", reject);
+    });
   }
 
   async createSession(accountId: string, channel: string = "cli"): Promise<SessionInfo> {

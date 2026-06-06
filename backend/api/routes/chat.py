@@ -1,47 +1,51 @@
 """
 Chat API Routes
-Phase 2: Now uses session memory for conversation context
+Phase 3: With Evaluator Agent and SSE streaming
 """
+import asyncio
+import json
 from datetime import datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import StreamingResponse
 
-from api.dto.session_dto import CreateSessionRequest, CreateSessionResponse
 from api.dto.chat_dto import ChatRequest, ChatResponse
 from domain.models.session import Session
 from infrastructure.storage.session_file_store import SessionFileStore
+from services.chat_service import ChatService
+from services.evaluator_agent import EvaluatorAgent
 
 router = APIRouter()
 session_store = SessionFileStore()
+chat_service = ChatService(session_store)
+evaluator = EvaluatorAgent()
 
 
-@router.post("/sessions", response_model=CreateSessionResponse)
-async def create_session(request: CreateSessionRequest) -> CreateSessionResponse:
-    """Create a new chat session"""
-    session = Session(
-        account_id=request.account_id,
-        channel=request.channel,
-        agent_id=request.agent_id or "default",
-    )
-    session_store.save(session)
+async def generate_sse_stream(session_id: str, message: str, needs_clarification: bool):
+    """Generate SSE stream for chat response"""
+    # Event: start
+    yield f"event: start\ndata: {json.dumps({'session_id': session_id})}\n\n"
 
-    return CreateSessionResponse(
-        session_id=session.session_id,
-        account_id=session.account_id,
-        channel=session.channel,
-        agent_id=session.agent_id,
-        status=session.status,
-        created_at=session.created_at.isoformat() + "Z",
-    )
+    # Simulate processing delay
+    await asyncio.sleep(0.5)
+
+    # Event: processing
+    if needs_clarification:
+        yield f"event: clarification\ndata: {json.dumps({'needs_clarification': True})}\n\n"
+    else:
+        yield f"event: processing\ndata: {json.dumps({'status': 'processing'})}\n\n"
+        await asyncio.sleep(0.3)
+
+    # Event: complete
+    yield f"event: complete\ndata: {json.dumps({'session_id': session_id, 'message_count': 0})}\n\n"
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     """
-    Chat endpoint with session memory.
-    If session_id is provided, loads existing session.
-    Otherwise creates a new session.
+    Chat endpoint with Evaluator Agent.
+    If request needs clarification, returns questions.
     """
     # Get or create session
     if request.session_id:
@@ -52,53 +56,114 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 detail=f"Session {request.session_id} not found",
             )
     else:
-        # Create new session
         session = Session(
             account_id=request.account_id,
             channel=request.channel,
         )
 
-    # Add user message
+    # Evaluate requirement first
+    context = {
+        "project_path": request.metadata.get("project_path"),
+        "files": request.metadata.get("files", []),
+    }
+    eval_result = evaluator.evaluate(request.params.get("message", ""), context)
+
+    if not eval_result.is_complete:
+        # Return clarification questions
+        questions_text = "\n".join(eval_result.questions)
+        response_text = f"📋 需求评估：信息不足\n\n{questions_text}"
+
+        session.add_message("user", request.params.get("message", ""))
+        session.add_message("assistant", response_text)
+        session_store.save(session)
+
+        return ChatResponse(
+            id=str(uuid4()),
+            status="clarification_needed",
+            message="Please provide more details",
+            data={
+                "reply": response_text,
+                "session_id": session.session_id,
+                "message_count": len(session.messages),
+                "needs_clarification": True,
+                "questions": eval_result.questions,
+            },
+            timestamp=datetime.utcnow().isoformat() + "Z",
+        )
+
+    # Process with chat service
     message = request.params.get("message", "")
-    session.add_message("user", message)
-
-    # For Phase 2, we just echo back (Phase 3 will add AI)
-    reply = f"Echo: {message}\n\n[Session {session.session_id} stored {len(session.messages)} messages]"
-
-    # Add assistant response
-    session.add_message("assistant", reply)
-
-    # Save updated session
-    session_store.save(session)
+    response_text, needs_clarification = await chat_service.chat(session, message)
 
     return ChatResponse(
         id=str(uuid4()),
         status="success",
-        message="Message stored in session",
+        message="Message processed",
         data={
-            "reply": reply,
+            "reply": response_text,
             "session_id": session.session_id,
             "message_count": len(session.messages),
+            "needs_clarification": needs_clarification,
         },
         timestamp=datetime.utcnow().isoformat() + "Z",
     )
 
 
-@router.get("/sessions/{session_id}/history")
-async def get_chat_history(session_id: str) -> dict:
-    """Get chat history for a session"""
-    session = session_store.load(session_id)
-
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Session {session_id} not found",
+@router.post("/chat/stream")
+async def chat_stream(request: ChatRequest) -> StreamingResponse:
+    """
+    SSE streaming endpoint for chat.
+    Use this for real-time response streaming.
+    """
+    # Get or create session
+    if request.session_id:
+        session = session_store.load(request.session_id)
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session {request.session_id} not found",
+            )
+    else:
+        session = Session(
+            account_id=request.account_id,
+            channel=request.channel,
         )
 
-    return {
-        "session_id": session.session_id,
-        "messages": [
-            {"role": m.role, "content": m.content, "timestamp": m.timestamp.isoformat() + "Z"}
-            for m in session.messages
-        ],
-    }
+    # Evaluate requirement
+    message = request.params.get("message", "")
+    eval_result = evaluator.evaluate(message)
+
+    if not eval_result.is_complete:
+        # Return clarification immediately
+        async def clarification_stream():
+            questions_text = "\n".join(eval_result.questions)
+            response_text = f"📋 需求评估：信息不足\n\n{questions_text}"
+
+            session.add_message("user", message)
+            session.add_message("assistant", response_text)
+            session_store.save(session)
+
+            yield f"event: clarification\ndata: {json.dumps({'reply': response_text, 'session_id': session.session_id})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'complete': True})}\n\n"
+
+    else:
+        # Stream processing
+        async def processing_stream():
+            session.add_message("user", message)
+
+            yield f"event: start\ndata: {json.dumps({'session_id': session.session_id})}\n\n"
+            await asyncio.sleep(0.3)
+
+            yield f"event: processing\ndata: {json.dumps({'status': 'thinking'})}\n\n"
+            await asyncio.sleep(0.5)
+
+            # Process with agent
+            response_text, _ = await chat_service.chat(session, message)
+
+            yield f"event: response\ndata: {json.dumps({'reply': response_text, 'message_count': len(session.messages)})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'complete': True})}\n\n"
+
+        return StreamingResponse(
+            clarification_stream() if not eval_result.is_complete else processing_stream(),
+            media_type="text/event-stream",
+        )
