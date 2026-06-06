@@ -1,12 +1,14 @@
 """
 Chat Service
-Phase 3: Agent logic with AI integration
+Phase 3: Agent logic with AI integration (Real LLM)
 """
+import os
 from datetime import datetime
 from uuid import uuid4
 
 from domain.models.session import Session
 from infrastructure.storage.session_file_store import SessionFileStore
+from services.llm_service import LLMService
 
 
 class ChatService:
@@ -14,6 +16,7 @@ class ChatService:
 
     def __init__(self, session_store: SessionFileStore | None = None):
         self.session_store = session_store or SessionFileStore()
+        self.llm = LLMService()
 
     async def chat(
         self,
@@ -22,10 +25,6 @@ class ChatService:
     ) -> tuple[str, bool]:
         """
         Process chat message and return (response, needs_clarification).
-
-        For Phase 3:
-        - If message is vague, return clarification questions
-        - Otherwise, return AI response (mocked for now)
 
         Returns:
             tuple: (response_message, needs_clarification)
@@ -43,7 +42,7 @@ class ChatService:
             self.session_store.save(session)
             return response, True
 
-        # Process the request (mocked AI response for Phase 3)
+        # Process with real LLM
         response = await self._process_with_agent(session, message)
         session.add_message("assistant", response)
         self.session_store.save(session)
@@ -83,17 +82,73 @@ class ChatService:
 
     async def _process_with_agent(self, session: Session, message: str) -> str:
         """
-        Process message with AI Agent.
-        For Phase 3, this is a mock implementation.
+        Process message with real AI Agent (Claude API).
         """
-        # Mock response for Phase 3
-        # Phase 4+ will integrate real LLM
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
 
+        if not api_key:
+            # Fallback to mock response if no API key
+            return self._mock_response(session, message)
+
+        # Build messages for Claude
+        claude_messages = []
+        for msg in session.messages:
+            claude_messages.append({
+                "role": msg["role"],
+                "content": msg["content"],
+            })
+
+        # System prompt
+        system = """你是一个专业的编程助手，擅长 DDD 领域驱动设计。
+请用中文回答。帮助用户完成代码编写、修改、分析等任务。
+如果用户要求你执行操作（如创建文件、运行命令），请先确认再执行。"""
+
+        # Call LLM
+        result = await self.llm.chat(
+            messages=claude_messages,
+            system=system,
+        )
+
+        return result.get("content", "⚠️ 无法获取响应")
+
+    def _mock_response(self, session: Session, message: str) -> str:
+        """
+        Mock response when no API key is configured.
+        Simulates AI behavior for testing.
+        """
+        # Check for common intents
+        msg_lower = message.lower()
+
+        if "创建" in message or "新建" in message:
+            if "文件" in message or "接口" in message:
+                return """好的，我来帮您创建。
+
+我将执行以下操作：
+1. 分析项目结构
+2. 创建相应的代码文件
+3. 编写功能实现
+
+请确认是否继续？"""
+
+        if "修改" in message or "改" in message:
+            if "bug" in msg_lower or "错误" in message:
+                return """好的，我来分析并修复这个问题。
+
+请提供：
+1. 出错的文件路径
+2. 错误信息或症状描述"""
+
+        if "查看" in message or "看看" in message:
+            return """好的，我来查看项目情况。
+
+请告诉我您想了解哪方面的信息？"""
+
+        # Default mock responses
         responses = [
-            f"我收到了您的请求：{message[:50]}...",
-            "正在分析需求...",
-            "根据您的描述，我理解您需要：",
-            f"我已经记录了您的请求。完整响应将在 Phase 4 实现。",
+            "我收到了您的请求，正在分析...",
+            "根据您的描述，我理解您需要帮助完成编程任务。",
+            "好的，让我来处理这个请求。",
+            "明白了。我会尽力帮助您完成这个任务。",
         ]
 
         return responses[len(session.messages) % len(responses)]
