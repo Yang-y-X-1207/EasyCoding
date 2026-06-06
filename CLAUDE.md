@@ -2,11 +2,37 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Status
+
+**Phase 1 not started yet** - Minimal viable system (CLI <-> Backend communication) is the first milestone.
+
 ## Project Overview
 
 **Coding-CLI** is an AI coding assistant CLI tool that receives developer instructions via chat platforms (Slack/Telegram/Discord), dispatches local Agent to execute coding tasks, and returns results to chat platforms.
 
-**Agent Specialization**: The Agent specializes in DDD (Domain-Driven Design) assisted coding, helping developers understand and implement DDD patterns (Entity, Value Object, Aggregate, Repository, Domain Service).
+**Agent Specialization**: The Agent specializes in DDD (Domain-Driven Design) assisted coding, helping developers understand and implement DDD patterns.
+
+### DDD Patterns Supported
+
+| Pattern | Description |
+|---------|-------------|
+| Entity | Objects with identity that persists over time |
+| Value Object | Immutable objects defined by their attributes |
+| Aggregate | Cluster of related entities with a root |
+| Repository | Abstraction for data access |
+| Domain Service | Operations that don't belong to entities |
+| Domain Event | Records of significant domain occurrences |
+
+### DDD Layer Conventions
+
+```
+api/          # HTTP entry points, DTOs, request/response models
+app/          # Application services, use cases, orchestration
+domain/       # Entities, value objects, domain services, port interfaces
+infrastructure/# Port implementations, external adapters, persistence
+trigger/      # Event handlers, webhooks, async triggers
+types/        # Shared types, enums, constants
+```
 
 ## Architecture
 
@@ -111,16 +137,55 @@ coding-cli chat
 
 See PRD.md Section 5 for detailed implementation plan:
 
-| Phase | Content | Duration |
-|-------|---------|----------|
-| Phase 1 | Minimal viable system (CLI <-> Backend) | 1 week |
-| Phase 2 | Basic Memory storage | 1 week |
-| Phase 3 | Single Agent + Evaluator | 1-2 weeks |
-| Phase 4 | Task queue + deduplication | 1-2 weeks |
-| Phase 5 | Multi-Channel | 2 weeks |
-| Phase 6 | Workspace isolation | 1 week |
-| Phase 7 | Git Agent | 1 week |
-| Phase 8 | Long-term memory + review | 1 week |
+| Phase | Content | Duration | Status |
+|-------|---------|----------|--------|
+| Phase 1 | Minimal viable system (CLI <-> Backend) | 1 week | TODO |
+| Phase 2 | Basic Memory storage | 1 week | TODO |
+| Phase 3 | Single Agent + Evaluator | 1-2 weeks | TODO |
+| Phase 4 | Task queue + deduplication | 1-2 weeks | TODO |
+| Phase 5 | Multi-Channel | 2 weeks | TODO |
+| Phase 6 | Workspace isolation | 1 week | TODO |
+| Phase 7 | Git Agent | 1 week | TODO |
+| Phase 8 | Long-term memory + review | 1 week | TODO |
+
+## Memory File Structure
+
+```
+memory/
+├── sessions/{session-id}.json   # Session data (messages, context)
+├── sessions/{session-id}.md     # Human-readable summary
+├── projects/{project-hash}/context.md  # Project-level context
+└── agents/{agent-id}/config.yaml # Agent configuration
+```
+
+## Important Conventions
+
+### Commit Messages
+```
+feat(module): add user registration endpoint
+
+- Add POST /api/v1/users endpoint
+- Integrate with UserRepository
+- Add input validation
+
+Closes: #123
+```
+
+### File Naming
+- Python: `snake_case.py`
+- TypeScript: `camelCase.ts` or `kebab-case.ts`
+- Config: `kebab-case.yaml`
+
+### API Response Format
+```json
+{
+  "id": "request-uuid",
+  "status": "success|error|processing",
+  "message": "Human-readable message",
+  "data": { ... },
+  "timestamp": "2026-06-06T00:00:00Z"
+}
+```
 
 ## Technology Stack
 
