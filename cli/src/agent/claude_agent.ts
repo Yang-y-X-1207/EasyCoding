@@ -22,6 +22,9 @@ class ToolHandler {
 
   async handleCommand(input: string): Promise<string | null> {
     const trimmed = input.trim();
+    const lower = trimmed.toLowerCase();
+
+    // ============ Tool Commands ============
 
     // Read file: read <path>
     if (trimmed.startsWith("read ")) {
@@ -60,6 +63,50 @@ class ToolHandler {
         const searchPath = parts[1] || ".";
         return this.grep(pattern, searchPath);
       }
+    }
+
+    // ============ Natural Language Tool Detection ============
+
+    // Check for Chinese character at start (charCode > 127 means non-ASCII)
+    const firstCharCode = trimmed.charCodeAt(0);
+    const isChineseFirstChar = firstCharCode > 127;
+
+    if (isChineseFirstChar && trimmed.length > 1) {
+      // This is likely a Chinese command
+      // Chinese characters commonly used for file operations:
+      // 看(look/read), 查(check), 读(read), 打开(open), 创建(create), 写入(write)
+      const chineseCommands = ["看", "查看", "读取", "打开", "查", "读"];
+
+      for (const cmd of chineseCommands) {
+        if (trimmed.startsWith(cmd)) {
+          // Found a Chinese read command
+          const rest = trimmed.slice(cmd.length).trim();
+          if (rest) {
+            // There seems to be a path after the command
+            // Try to parse it as a file path
+            const filePath = rest;
+            return this.readFile(filePath);
+          }
+        }
+      }
+
+      // If no known command matched but first char is Chinese,
+      // it might still be a file path starting with Chinese
+      // e.g., "桌面/文件夹/file.txt"
+      if (trimmed.includes("/") || trimmed.includes("\\")) {
+        return this.readFile(trimmed);
+      }
+    }
+
+    // "列目录/查看结构" - List directory
+    if (lower.includes("目录") || lower.includes("结构") || lower.includes("文件夹") || lower === "ls") {
+      return this.listDir(".");
+    }
+
+    // "运行/执行 + 命令" - Bash command
+    if (lower.startsWith("运行 ") || lower.startsWith("执行 ")) {
+      const cmd = trimmed.replace(/^(运行|执行)\s+/, "");
+      return this.runBash(cmd);
     }
 
     return null;
