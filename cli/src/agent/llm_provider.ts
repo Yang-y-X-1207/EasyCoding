@@ -172,19 +172,20 @@ export class LLMProviderClient {
   // ============ Anthropic ============
 
   private async anthropicChat(
-    messages: Array<{ role: string; content: string }>,
+    messages: Array<{ role: string; content: string; tool_call_id?: string; tool_name?: string }>,
     system?: string,
     tools?: ToolDefinition[]
   ): Promise<LLMResponse> {
     const url = this.config.baseUrl || "https://api.anthropic.com/v1/messages";
 
+    // Convert messages to Anthropic format
+    // Anthropic expects tool results as tool_result blocks in user messages
+    const anthropicMessages = this._convertMessagesForAnthropic(messages);
+
     const payload: any = {
       model: this.config.model || "claude-sonnet-4-7",
       max_tokens: 4096,
-      messages: messages.map(m => ({
-        role: m.role === "assistant" ? "assistant" : "user",
-        content: m.content,
-      })),
+      messages: anthropicMessages,
     };
 
     if (system) {
@@ -477,6 +478,113 @@ export class LLMProviderClient {
         output_tokens: data.usage?.completion_tokens,
       },
     };
+  }
+
+  /**
+   * Convert messages to Anthropic format
+   * Tool results must be formatted as tool_result blocks in user messages
+   */
+  private _convertMessagesForAnthropic(
+    messages: Array<{ role: string; content: string; tool_call_id?: string; tool_name?: string }>
+  ): any[] {
+    const result: any[] = [];
+    let i = 0;
+
+    while (i < messages.length) {
+      const msg = messages[i];
+
+      if (msg.role === "system") {
+        // System messages are handled separately in the payload
+        i++;
+        continue;
+      }
+
+      if (msg.role === "tool") {
+        // Tool results need to be embedded in a user message
+        // Find the previous user message or create a new one
+        const toolResultBlock = {
+          type: "tool_result",
+          tool_use_id: msg.tool_call_id || "",
+          content: msg.content || "",
+        };
+
+        // Check if previous message is a user message
+        if (result.length > 0 && result[result.length - 1].role === "user") {
+          const lastMsg = result[result.length - 1];
+          if (Array.isArray(lastMsg.content)) {
+            lastMsg.content.push(toolResultBlock);
+          } else {
+            lastMsg.content = [
+              { type: "text", text: lastMsg.content || "" },
+              toolResultBlock,
+            ];
+          }
+        } else {
+          // Create new user message with tool result
+          result.push({
+            role: "user",
+            content: [toolResultBlock],
+          });
+        }
+        i++;
+        continue;
+      }
+
+      if (msg.role === "assistant") {
+        // Assistant messages need content blocks
+        const contentBlocks: any[] = [];
+
+        if (msg.content) {
+          contentBlocks.push({ type: "text", text: msg.content });
+        }
+
+        // Check if there are tool calls following this assistant message
+        // that should be included as tool_use blocks
+        // Look ahead for tool messages
+        let j = i + 1;
+        while (j < messages.length && messages[j].role === "tool") {
+          // This is a placeholder - actual tool_use blocks come from LLM response
+          // When we receive LLM response with tool_use, we need to preserve them
+          j++;
+        }
+
+        result.push({
+          role: "assistant",
+          content: contentBlocks.length > 0 ? contentBlocks : undefined,
+        });
+        i++;
+        continue;
+      }
+
+      if (msg.role === "user") {
+        const contentBlocks: any[] = [];
+        const content = msg.content as string | any[] | undefined;
+
+        if (typeof content === "string") {
+          contentBlocks.push({ type: "text", text: content });
+        } else if (Array.isArray(content)) {
+          // Content might already be blocks
+          for (const block of content) {
+            if (typeof block === "string") {
+              contentBlocks.push({ type: "text", text: block });
+            } else {
+              contentBlocks.push(block);
+            }
+          }
+        }
+
+        result.push({
+          role: "user",
+          content: contentBlocks.length > 0 ? contentBlocks : [{ type: "text", text: "" }],
+        });
+        i++;
+        continue;
+      }
+
+      i++;
+    }
+
+    return result;
   }
 }
 
