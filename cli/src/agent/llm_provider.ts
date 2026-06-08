@@ -538,14 +538,17 @@ export class LLMProviderClient {
           contentBlocks.push({ type: "text", text: msg.content });
         }
 
-        // Check if there are tool calls following this assistant message
-        // that should be included as tool_use blocks
-        // Look ahead for tool messages
-        let j = i + 1;
-        while (j < messages.length && messages[j].role === "tool") {
-          // This is a placeholder - actual tool_use blocks come from LLM response
-          // When we receive LLM response with tool_use, we need to preserve them
-          j++;
+        // Include tool_use blocks if present (from LLM response with tool calls)
+        const toolUseBlocks = (msg as any).tool_use_blocks;
+        if (toolUseBlocks && Array.isArray(toolUseBlocks)) {
+          for (const tc of toolUseBlocks) {
+            contentBlocks.push({
+              type: "tool_use",
+              id: tc.id,
+              name: tc.name,
+              input: tc.arguments || {},
+            });
+          }
         }
 
         result.push({
