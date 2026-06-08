@@ -15,7 +15,7 @@ interface Message {
   content: string;
   tool_call_id?: string;
   tool_name?: string;
-  tool_use_blocks?: ToolCall[];
+  tool_calls?: Array<{ id: string; function: { name: string; arguments: any } }>;
 }
 
 // ============ Response Parser ============
@@ -341,11 +341,18 @@ export async function runDirectChat(
           // Execute tool calls
           const toolResults = await executeToolCalls(registry, response.tool_calls);
 
-          // Add assistant message with tool_use blocks for proper tool result matching
+          // Add assistant message with tool_calls in OpenAI format (like nanobot does)
+          // Format: { id, function: { name, arguments } }
           messages.push({
             role: "assistant",
             content: response.content || "",
-            tool_use_blocks: response.tool_calls,  // Store tool_use blocks for conversion
+            tool_calls: response.tool_calls.map(tc => ({
+              id: tc.id,
+              function: {
+                name: tc.name,
+                arguments: tc.arguments,
+              },
+            })),
           });
 
           // Add tool results as tool messages

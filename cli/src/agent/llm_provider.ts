@@ -531,25 +531,27 @@ export class LLMProviderClient {
       }
 
       if (msg.role === "assistant") {
-        // Assistant messages need content blocks
+        // Assistant messages need content blocks (like nanobot's _assistant_blocks)
         const contentBlocks: any[] = [];
 
         if (msg.content) {
           contentBlocks.push({ type: "text", text: msg.content });
         }
 
-        // Only include tool_use blocks for the LAST assistant message
-        // (which is the current turn's response with tool calls)
-        // This prevents old tool_use blocks from being sent in subsequent turns
+        // Handle tool_calls in OpenAI format: { id, function: { name, arguments } }
+        // Only include for the LAST assistant message to prevent errors in subsequent turns
         const isLastMessage = i === messages.length - 1;
-        const toolUseBlocks = (msg as any).tool_use_blocks;
-        if (toolUseBlocks && Array.isArray(toolUseBlocks) && isLastMessage) {
-          for (const tc of toolUseBlocks) {
+        const toolCalls = (msg as any).tool_calls;
+        if (toolCalls && Array.isArray(toolCalls) && isLastMessage) {
+          for (const tc of toolCalls) {
+            if (!tc || typeof tc !== 'object') continue;
+            const func = tc.function || {};
+            const args = func.arguments;
             contentBlocks.push({
               type: "tool_use",
-              id: tc.id,
-              name: tc.name,
-              input: tc.arguments || {},
+              id: tc.id || `tc-${Date.now()}`,
+              name: func.name || "unknown",
+              input: typeof args === 'object' ? args : {},
             });
           }
         }
