@@ -538,9 +538,12 @@ export class LLMProviderClient {
           contentBlocks.push({ type: "text", text: msg.content });
         }
 
-        // Include tool_use blocks if present (from LLM response with tool calls)
+        // Only include tool_use blocks for the LAST assistant message
+        // (which is the current turn's response with tool calls)
+        // This prevents old tool_use blocks from being sent in subsequent turns
+        const isLastMessage = i === messages.length - 1;
         const toolUseBlocks = (msg as any).tool_use_blocks;
-        if (toolUseBlocks && Array.isArray(toolUseBlocks)) {
+        if (toolUseBlocks && Array.isArray(toolUseBlocks) && isLastMessage) {
           for (const tc of toolUseBlocks) {
             contentBlocks.push({
               type: "tool_use",
