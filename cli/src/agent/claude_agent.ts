@@ -310,6 +310,73 @@ class ToolHandler {
   }
 }
 
+// ============ Response Parser ============
+
+/**
+ * Parse LLM response to detect failure indicators
+ */
+function parseResponse(content: string): { success: boolean; displayContent: string } {
+  const trimmed = content.trim();
+
+  // Patterns indicating task failure or inability to complete
+  const failurePatterns = [
+    /无法完成/i,
+    /无法做到/i,
+    /做不到/i,
+    /无法执行/i,
+    /无法处理/i,
+    /无法回答/i,
+    /无法帮你/i,
+    /做不到的/i,
+    /无法胜任/i,
+    /超出能力范围/i,
+    /无法访问/i,
+    /没有权限/i,
+    /无法读取/i,
+    /找不到/i,
+    /不存在/i,
+    /无法创建/i,
+    /无法写入/i,
+    /失败了/i,
+    /错误/i,
+  ];
+
+  // Check if response explicitly says it can't complete the task
+  for (const pattern of failurePatterns) {
+    if (pattern.test(trimmed)) {
+      return {
+        success: false,
+        displayContent: `❌ ${trimmed}`,
+      };
+    }
+  }
+
+  // Check for explicit refusal patterns
+  const refusalPatterns = [
+    /我不能/i,
+    /我不可以/i,
+    /我无法/i,
+    /我没有办法/i,
+    /抱歉.*无法/i,
+    /对不起.*无法/i,
+  ];
+
+  for (const pattern of refusalPatterns) {
+    if (pattern.test(trimmed)) {
+      return {
+        success: false,
+        displayContent: `❌ ${trimmed}`,
+      };
+    }
+  }
+
+  // Response seems fine
+  return {
+    success: true,
+    displayContent: `🤖 ${trimmed}`,
+  };
+}
+
 // ============ Main CLI ============
 
 export async function runDirectChat(
@@ -492,7 +559,8 @@ export async function runDirectChat(
       try {
         messages.push({ role: "user", content: input });
         const response = await client.chat(messages, systemPrompt);
-        console.log(`🤖 ${response.content}\n`);
+        const parsed = parseResponse(response.content);
+        console.log(`\n${parsed.displayContent}\n`);
         messages.push({ role: "assistant", content: response.content });
       } catch (e: any) {
         console.log(`❌ 错误: ${e.message}\n`);
