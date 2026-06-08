@@ -47,15 +47,13 @@ MINIMAX_MODEL=abab5.5-chat
 ### 3. 运行
 
 ```bash
-# 直接对话模式 (Claude Code 风格)
-cd cli
+# Windows 运行方式
+cd C:\Users\57826\IdeaProjects\EasyCoding\cli
 node dist/index.js direct -p .
 
-# Windows 示例 (当前目录)
-node dist/index.js direct -p C:\Users\你的用户名\项目路径
-
-# Linux/Mac 示例
-node dist/index.js direct -p /home/user/my-project
+# Linux/Mac 运行方式
+cd /path/to/EasyCoding/cli
+node dist/index.js direct -p .
 ```
 
 ---
