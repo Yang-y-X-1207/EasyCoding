@@ -9,6 +9,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
 import { LLMProviderClient, loadProviderFromEnv, loadFromEnvFile, ProviderConfig } from "./llm_provider";
+import { PromptOptimizer } from "./prompt_optimizer";
 
 interface Message {
   role: "user" | "assistant";
@@ -29,7 +30,7 @@ class ToolHandler {
     // Read file: read <path>
     if (trimmed.startsWith("read ")) {
       const filePath = trimmed.slice(5).trim();
-      return this.readFile(filePath);
+      return this.smartRead(filePath);
     }
 
     // Write file: write <path> <content>
@@ -75,17 +76,43 @@ class ToolHandler {
       // This is likely a Chinese command
       // Chinese characters commonly used for file operations:
       // 看(look/read), 查(check), 读(read), 打开(open), 创建(create), 写入(write)
-      const chineseCommands = ["看", "查看", "读取", "打开", "查", "读"];
 
-      for (const cmd of chineseCommands) {
-        if (trimmed.startsWith(cmd)) {
-          // Found a Chinese read command
-          const rest = trimmed.slice(cmd.length).trim();
+      // Patterns like "读一下 <path>", "帮我看看 <path>", "麻烦看一下 <path>"
+      // We need to strip filler words before parsing the path
+      const chineseReadPatterns = [
+        // Full patterns with filler words
+        { pattern: /^读一下\s+/, cmd: "读" },
+        { pattern: /^看一下\s+/, cmd: "看" },
+        { pattern: /^看看\s+/, cmd: "看" },
+        { pattern: /^帮我看\s+/, cmd: "看" },
+        { pattern: /^帮我读\s+/, cmd: "读" },
+        { pattern: /^帮我查看\s+/, cmd: "查看" },
+        { pattern: /^麻烦看一下\s+/, cmd: "看" },
+        { pattern: /^麻烦读一下\s+/, cmd: "读" },
+        { pattern: /^请看一下\s+/, cmd: "看" },
+        { pattern: /^请读一下\s+/, cmd: "读" },
+        { pattern: /^打开\s+/, cmd: "打开" },
+        { pattern: /^浏览\s+/, cmd: "浏览" },
+        { pattern: /^导航到\s+/, cmd: "导航到" },
+      ];
+
+      for (const item of chineseReadPatterns) {
+        if (item.pattern.test(trimmed)) {
+          const rest = trimmed.replace(item.pattern, "").trim();
           if (rest) {
-            // There seems to be a path after the command
-            // Try to parse it as a file path
-            const filePath = rest;
-            return this.readFile(filePath);
+            return this.smartRead(rest);
+          }
+        }
+      }
+
+      // Simple commands: "看 <path>", "读 <path>", "查看 <path>", etc.
+      const simpleCommands = ["看", "查看", "读取", "打开", "查", "读", "浏览", "导航到"];
+      for (const cmd of simpleCommands) {
+        if (trimmed.startsWith(cmd)) {
+          const rest = trimmed.slice(cmd.length).trim();
+          // Only treat as path if it doesn't start with common filler words
+          if (rest && !rest.startsWith("一下") && !rest.startsWith("一下")) {
+            return this.smartRead(rest);
           }
         }
       }
@@ -94,7 +121,7 @@ class ToolHandler {
       // it might still be a file path starting with Chinese
       // e.g., "桌面/文件夹/file.txt"
       if (trimmed.includes("/") || trimmed.includes("\\")) {
-        return this.readFile(trimmed);
+        return this.smartRead(trimmed);
       }
     }
 
@@ -109,7 +136,108 @@ class ToolHandler {
       return this.runBash(cmd);
     }
 
+    // ============ Smart Path Detection ============
+    // If input looks like a path, try to read it
+    if (this.looksLikePath(trimmed)) {
+      const result = this.smartRead(trimmed);
+      // Only return if path exists, otherwise let LLM handle it
+      if (!result.startsWith("⚠️ 路径不存在")) {
+        return result;
+      }
+    }
+
     return null;
+  }
+
+  /**
+   * Check if input looks like a file or directory path
+   */
+  private looksLikePath(input: string): boolean {
+    // Skip if it's clearly a command
+    if (input.startsWith("!") || input.startsWith("read ") || input.startsWith("write ") ||
+        input.startsWith("grep ") || input.startsWith("ls")) {
+      return false;
+    }
+
+    // Skip if it's very short (likely a single word command)
+    if (input.length < 2) {
+      return false;
+    }
+
+    // Check for common path indicators
+    // 1. Has file extension (e.g., src/index.ts, package.json)
+    if (this.hasFileExtension(input)) {
+      return true;
+    }
+
+    // 2. Ends with path separator (directory)
+    if (input.endsWith("/") || input.endsWith("\\")) {
+      return true;
+    }
+
+    // 3. Contains path separators and looks like a file/dir reference
+    if ((input.includes("/") || input.includes("\\")) && !input.includes(" ")) {
+      return true;
+    }
+
+    // 4. Looks like a relative project path (e.g., src, src/utils, package.json)
+    const commonPrefixes = ["src", "lib", "app", "dist", "build", "test", "tests", "docs", "config", "scripts", "tools", "backend", "cli", "memory", "workspace"];
+    for (const prefix of commonPrefixes) {
+      if (input === prefix || input.startsWith(prefix + "/") || input.startsWith(prefix + "\\")) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if string has a common file extension
+   */
+  private hasFileExtension(input: string): boolean {
+    const extensions = [
+      ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".txt", ".yaml", ".yml",
+      ".py", ".java", ".c", ".cpp", ".h", ".hpp", ".go", ".rs", ".rb", ".php",
+      ".html", ".css", ".scss", ".less", ".xml", ".sql", ".sh", ".bash", ".bat",
+      ".env", ".gitignore", ".dockerfile", "package.json", "tsconfig.json",
+      "pom.xml", "build.gradle", "requirements.txt", "Cargo.toml", "Makefile"
+    ];
+
+    const lower = input.toLowerCase();
+    for (const ext of extensions) {
+      if (lower.endsWith(ext)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Smart read: automatically detect if path is file or directory
+   */
+  private smartRead(inputPath: string): string {
+    const fullPath = this.resolvePath(inputPath);
+
+    // Check if path exists
+    if (!fs.existsSync(fullPath)) {
+      // Try without trailing slashes for directories
+      const normalized = inputPath.replace(/[\/\\]+$/, "");
+      if (normalized !== inputPath) {
+        return this.smartRead(normalized);
+      }
+      return `⚠️ 路径不存在: ${inputPath}\n   相对于项目: ${this.projectPath}`;
+    }
+
+    // Check if it's a directory
+    try {
+      const stat = fs.statSync(fullPath);
+      if (stat.isDirectory()) {
+        return this.listDir(inputPath);
+      }
+      return this.readFile(inputPath);
+    } catch (e: any) {
+      return `⚠️ 无法读取: ${e.message}`;
+    }
   }
 
   private readFile(filePath: string): string {
@@ -234,6 +362,7 @@ export async function runDirectChat(
   }
 
   const client = new LLMProviderClient(config);
+  const optimizer = new PromptOptimizer(config);
   const tools = new ToolHandler(projectPath);
   const messages: Message[] = [];
 
@@ -303,7 +432,16 @@ export async function runDirectChat(
 
       if (!input.trim()) continue;
 
-      const lower = input.toLowerCase();
+      // Optimize user input with Prompt Optimizer Agent
+      const optimized = await optimizer.optimize(input);
+      const processedInput = optimized.command;
+
+      // Log optimization if it was normalized
+      if (optimized.intent) {
+        console.log(`\n💡 ${optimized.intent}\n`);
+      }
+
+      const lower = processedInput.toLowerCase();
 
       // Special commands
       if (lower === "exit") {
@@ -341,7 +479,7 @@ export async function runDirectChat(
       }
 
       // Check for tool commands first
-      const toolResult = await tools.handleCommand(input);
+      const toolResult = await tools.handleCommand(processedInput);
       if (toolResult) {
         console.log(`\n${toolResult}\n`);
         messages.push({ role: "user", content: input });
