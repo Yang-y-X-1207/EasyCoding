@@ -343,6 +343,7 @@ export async function runDirectChat(
 
           // Add assistant message with tool_calls in OpenAI format (like nanobot does)
           // Format: { id, function: { name, arguments } }
+          // Note: arguments is stored as a JSON string (not object) like nanobot does
           messages.push({
             role: "assistant",
             content: response.content || "",
@@ -350,7 +351,7 @@ export async function runDirectChat(
               id: tc.id,
               function: {
                 name: tc.name,
-                arguments: tc.arguments,
+                arguments: JSON.stringify(tc.arguments),  // Store as JSON string
               },
             })),
           });

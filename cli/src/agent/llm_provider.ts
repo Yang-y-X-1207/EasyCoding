@@ -546,7 +546,17 @@ export class LLMProviderClient {
           for (const tc of toolCalls) {
             if (!tc || typeof tc !== 'object') continue;
             const func = tc.function || {};
-            const args = func.arguments;
+            let args = func.arguments;
+
+            // Parse arguments if it's a string (JSON string from OpenAI format)
+            if (typeof args === 'string') {
+              try {
+                args = JSON.parse(args);
+              } catch {
+                args = {};
+              }
+            }
+
             contentBlocks.push({
               type: "tool_use",
               id: tc.id || `tc-${Date.now()}`,
