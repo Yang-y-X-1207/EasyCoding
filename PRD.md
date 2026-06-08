@@ -1,10 +1,10 @@
-# Coding-CLI 产品 PRD
+# EasyCoding 产品 PRD
 
 ## 1. 产品概述
 
 ### 1.1 产品定位
 
-**Coding-CLI** 是一个 AI 编程助手 CLI 工具，通过聊天平台（Slack/Telegram/Discord）接收开发者指令，调度本地 Agent 执行编码任务，返回结果到聊天平台。
+**EasyCoding** 是一个 AI 编程助手 CLI 工具，通过聊天平台（Slack/Telegram/Discord）接收开发者指令，调度本地 Agent 执行编码任务，返回结果到聊天平台。
 
 **Agent 专长**：这个 Agent 专精于 DDD（领域驱动设计）辅助编码，能够帮助开发者：
 - 理解和实现 DDD 架构模式（Entity、Value Object、Aggregate、Repository、Domain Service 等）
@@ -81,10 +81,23 @@
 
 | 命令 | 描述 | 优先级 |
 |------|------|--------|
-| `coding-cli chat` | 启动交互式聊天 | P0 |
-| `coding-cli init` | 初始化项目配置 | P0 |
-| `coding-cli config` | 管理 Agent 配置 | P1 |
-| `coding-cli status` | 查看连接状态 | P1 |
+| `easy-coding chat` | 启动交互式聊天 | P0 |
+| `easy-coding direct` | 直接 CLI 模式（无需后端） | P0 |
+| `easy-coding init` | 初始化项目配置 | P0 |
+| `easy-coding config` | 管理 Agent 配置 | P1 |
+| `easy-coding status` | 查看连接状态 | P1 |
+| `easy-coding task` | 任务队列操作 | P1 |
+
+#### 2.1.7 内置工具 (v0.9+)
+
+| 工具 | 描述 | 实现 |
+|------|------|------|
+| file_read | 读取文件内容 | Tool 基类 + pkgutil 自动发现 |
+| file_write | 写入文件内容 | Tool 基类 + pkgutil 自动发现 |
+| bash | 执行 Shell 命令 | Tool 基类 + asyncio |
+| git | Git 操作（status/diff/log/commit） | Tool 基类 |
+| glob | 文件模式搜索 | Tool 基类 |
+| grep | 内容搜索 | Tool 基类 |
 
 ---
 
@@ -310,51 +323,72 @@ channels:
 | Storage | JSON Files (memory/) | Session 记忆存储 |
 | Long-term | CLAUDE.md | 项目上下文、知识沉淀 |
 
-### 3.2 项目结构
+### 3.2 项目结构 (v0.9+)
 
 ```
-coding-cli/
+EasyCoding/
 ├── cli/                          # TypeScript CLI
 │   ├── src/
+│   │   ├── agent/                # LLM provider + Agent
 │   │   ├── commands/             # CLI 命令实现
-│   │   ├── adapters/            # 渠道适配器
-│   │   │   ├── slack.ts
-│   │   │   ├── telegram.ts
-│   │   │   ├── discord.ts
-│   │   │   └── http.ts
-│   │   ├── gateway/              # 网关客户端
-│   │   ├── memory/               # Memory 文件管理
-│   │   ├── types/                # TypeScript 类型
 │   │   └── index.ts              # CLI 入口
-│   └── package.json
+│   └── dist/                     # 编译输出
 │
 ├── backend/                      # Python Backend
+│   ├── agent/                    # Agent 系统 (v0.9+ new)
+│   │   ├── providers/            # LLM Provider 工厂
+│   │   │   ├── base.py           # LLMProvider 基类 + LLMResponse
+│   │   │   ├── registry.py       # ProviderSpec 元数据表 (~9 providers)
+│   │   │   ├── factory.py        # make_provider() 工厂函数
+│   │   │   ├── anthropic_provider.py
+│   │   │   ├── openai_compat_provider.py  # OpenAI/MiniMax/Groq
+│   │   │   ├── azure_provider.py
+│   │   │   ├── gemini_provider.py
+│   │   │   └── fallback_provider.py  # 主备切换
+│   │   ├── tools/                # 工具系统
+│   │   │   ├── base.py          # Tool 基类 + ToolContext
+│   │   │   ├── loader.py        # pkgutil 自动发现
+│   │   │   ├── registry.py     # ToolRegistry
+│   │   │   ├── file_read.py
+│   │   │   ├── file_write.py
+│   │   │   ├── bash.py
+│   │   │   ├── git.py
+│   │   │   ├── glob.py
+│   │   │   └── grep.py
+│   │   └── loop.py              # AgentLoop + AgentRunner + TurnState
+│   ├── bus/                      # MessageBus (asyncio.Queue)
+│   │   └── queue.py
 │   ├── api/                      # HTTP 入口、DTO
 │   │   ├── routes/
-│   │   │   ├── chat.py
-│   │   │   ├── session.py
-│   │   │   └── agent.py
 │   │   └── dto/
 │   ├── domain/                   # 领域模型、端口接口
-│   │   ├── models/               # 实体、值对象
-│   │   ├── ports/                # 端口接口
-│   │   └── services/             # 领域服务
-│   ├── infrastructure/           # 端口实现
-│   │   ├── adapters/             # 适配器实现
-│   │   └── storage/              # 存储实现
-│   ├── trigger/                  # 触发器
+│   │   ├── models/
+│   │   └── ports/
+│   ├── infrastructure/           # 存储和适配器
+│   │   ├── adapters/
+│   │   └── storage/
 │   └── services/                 # Agent 服务
 │
 ├── memory/                       # Memory 存储
-│   ├── sessions/
-│   ├── projects/
-│   └── agents/
+│   └── sessions/
 │
-├── CLAUDE.md                     # 长期记忆
-└── config.yaml                   # 全局配置
+└── workspace/                    # 工作区项目目录
 ```
 
-### 3.3 核心设计模式
+### 3.4 支持的 LLM 提供商 (v0.9+)
+
+| 提供商 | 环境变量 | Backend 类型 | 默认模型 |
+|--------|----------|-------------|----------|
+| Anthropic | `ANTHROPIC_API_KEY` | anthropic | claude-sonnet-4-7 |
+| OpenAI | `OPENAI_API_KEY` | openai_compat | gpt-4o |
+| MiniMax | `MINIMAX_API_KEY` | openai_compat | abab5.5-chat |
+| Groq | `GROQ_API_KEY` | openai_compat | mixtral-8x7b-32768 |
+| OpenRouter | `OPENROUTER_API_KEY` | openai_compat | anthropic/claude-3-haiku |
+| Azure | `AZURE_OPENAI_KEY` + `AZURE_OPENAI_ENDPOINT` | azure_openai | gpt-4 |
+| Gemini | `GEMINI_API_KEY` | gemini | gemini-1.5-flash |
+| DashScope | `DASHSCOPE_API_KEY` | openai_compat | qwen-plus |
+
+### 3.5 核心设计模式
 
 #### 六边形架构（端口与适配器）
 
@@ -374,6 +408,49 @@ Request → pendingRequests[id] = Future
 Response → id 匹配 → future.complete()
 ```
 
+#### Provider 工厂架构 (v0.9+)
+
+```
+ProviderSpec 元数据表 (registry.py)
+    ├── name: "anthropic"
+    ├── keywords: ("claude", "claude-sonnet", ...)
+    ├── env_key: "ANTHROPIC_API_KEY"
+    ├── backend: "anthropic"
+    └── default_model: "claude-sonnet-4-7"
+           ↓
+    make_provider() 工厂函数
+           ↓
+    ├── AnthropicProvider
+    ├── OpenAICompatProvider (OpenAI/MiniMax/Groq/DashScope)
+    ├── AzureOpenAIProvider
+    └── GeminiProvider
+           ↓
+    FallbackProvider (主备切换，3次失败60秒冷却)
+```
+
+#### Tool 自动发现 (v0.9+)
+
+```
+ToolLoader.discover()
+    ├── pkgutil.iter_modules() 扫描内置工具
+    └── importlib.metadata.entry_points() 扫描插件
+           ↓
+    ToolRegistry.register()
+           ↓
+    内置工具: file_read, file_write, bash, git, glob, grep
+```
+
+#### Agent Loop 状态机 (v0.9+)
+
+```
+TurnState: RESTORE → COMPACT → COMMAND → BUILD → RUN → SAVE → RESPOND → DONE
+
+_agent_loop.run():
+    while state != DONE:
+        event = await handler(state)
+        state = _TRANSITIONS[(state, event)]
+```
+
 ---
 
 ## 4. 验收标准
@@ -387,6 +464,11 @@ Response → id 匹配 → future.complete()
 | Agent 路由 | 不同 channel/account 路由到不同 Agent |
 | Memory 存储 | 重启后 session 历史可恢复 |
 | 多渠道 | Slack/Telegram 消息收发正常 |
+| Provider 工厂 | 自动检测环境变量创建 Provider |
+| Tool 自动发现 | pkgutil 发现内置工具并注册 |
+| Agent Loop 状态机 | TurnState 状态机正常流转 |
+| MessageBus | asyncio.Queue 解耦消息传递 |
+| FallbackProvider | 主备切换，3次失败60秒冷却 |
 
 ### 4.2 非功能验收
 
@@ -473,31 +555,41 @@ Response → id 匹配 → future.complete()
 ### Phase 8: 长期记忆 + 审核（1周）
 目标：持久化知识 + 代码审核
 
-- [ ] CLAUDE.md 读写
-- [ ] 项目上下文注入
-- [ ] PR/MR 创建（GitHub/GitLab API）
-- [ ] 审核通知（Slack/Email）
-- [ ] 测试：代码审核流程完整
+- [x] CLAUDE.md 读写
+- [x] 项目上下文注入
+- [x] PR/MR 创建（GitHub/GitLab API）
+- [x] 审核通知（Slack/Email）
+- [x] 测试：代码审核流程完整
+
+### Phase 9: 架构升级（基于 nanobot 对比分析）
+目标：提升架构质量，向 nanobot 架构看齐
+
+- [x] Provider 工厂架构（ProviderSpec 元数据表 + make_provider）
+- [x] Tool 自动发现（pkgutil + entry_points）
+- [x] Agent Loop 状态机（TurnState: RESTORE→COMPACT→COMMAND→BUILD→RUN→SAVE→RESPOND→DONE）
+- [x] MessageBus 解耦（asyncio.Queue）
+- [x] FallbackProvider 主备切换
 
 ---
 
 ## 总工期：9-10 周（约 2.5 个月）
 
-| Phase | 内容 | 周期 | 依赖 | 难度 |
-|-------|------|------|------|------|
-| Phase 1 | 最小可用系统 | 1周 | 无 | ★ |
-| Phase 2 | 基础 Memory | 1周 | Phase 1 | ★ |
-| Phase 3 | 单 Agent + Evaluator | 1-2周 | Phase 2 | ★★ |
-| Phase 4 | 任务队列 + 去重 | 1-2周 | Phase 3 | ★★★ |
-| Phase 5 | Multi-Channel | 2周 | Phase 1 | ★★★ |
-| Phase 6 | Workspace 隔离 | 1周 | Phase 4 | ★★ |
-| Phase 7 | Git Agent | 1周 | Phase 4 | ★★ |
-| Phase 8 | 长期记忆 + 审核 | 1周 | Phase 6+7 | ★★ |
+| Phase | 内容 | 周期 | 依赖 | 难度 | 状态 |
+|-------|------|------|------|------|------|
+| Phase 1 | 最小可用系统 | 1周 | 无 | ★ | ✅ |
+| Phase 2 | 基础 Memory | 1周 | Phase 1 | ★ | ✅ |
+| Phase 3 | 单 Agent + Evaluator | 1-2周 | Phase 2 | ★★ | ✅ |
+| Phase 4 | 任务队列 + 去重 | 1-2周 | Phase 3 | ★★★ | ✅ |
+| Phase 5 | Multi-Channel | 2周 | Phase 1 | ★★★ | ✅ |
+| Phase 6 | Workspace 隔离 | 1周 | Phase 4 | ★★ | ✅ |
+| Phase 7 | Git Agent | 1周 | Phase 4 | ★★ | ✅ |
+| Phase 8 | 长期记忆 + 审核 | 1周 | Phase 6+7 | ★★ | ✅ |
+| Phase 9 | 架构升级 | 1周 | Phase 1-8 | ★★★ | ✅ |
 
 ---
 ## 6. 竞品对比
 
-| 维度 | OpenClaw | Coding-CLI |
+| 维度 | OpenClaw | EasyCoding |
 |------|----------|-------------|
 | 目标平台 | 通用 Agent + 设备控制 | 编程助手 |
 | 交互形态 | 语音 + 文字 + 画布 | 纯文字（聊天平台） |
@@ -732,7 +824,7 @@ queue:
 
 writer:
   file_lock_timeout_seconds: 30
-  lock_dir: ".coding-cli/locks"  # 锁文件目录
+  lock_dir: ".easy-coding/locks"  # 锁文件目录
 
 reader:
   pool_size: 5                 # Reader Agent 池大小
@@ -799,7 +891,7 @@ class AgentSystem:
 ```
 /workspace/
 └── {workspace_id}/
-    ├── .coding-cli/           # CLI 配置
+    ├── .easy-coding/           # CLI 配置
     │   ├── config.yaml        # workspace 配置
     │   ├── memory/            # Memory 文件
     │   │   ├── sessions/
@@ -943,7 +1035,7 @@ notification:
   email:
     enabled: true
     smtp_server: "${SMTP_SERVER}"
-    from: "coding-cli@example.com"
+    from: "easy-coding@example.com"
     to_patterns:
       - "*.example.com"
   pr_template: |
