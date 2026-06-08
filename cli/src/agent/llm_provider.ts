@@ -20,6 +20,29 @@ interface LLMResponse {
     output_tokens?: number;
   };
   error?: string;
+  tool_calls?: ToolCall[];
+}
+
+/**
+ * Tool call request from LLM
+ */
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, any>;
+}
+
+/**
+ * Tool definition for LLM
+ */
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    type: string;
+    properties: Record<string, any>;
+    required?: string[];
+  };
 }
 
 export class LLMProviderClient {
@@ -49,18 +72,22 @@ export class LLMProviderClient {
     this.config = config;
   }
 
-  async chat(messages: Array<{ role: string; content: string }>, system?: string): Promise<LLMResponse> {
+  async chat(
+    messages: Array<{ role: string; content: string }>,
+    system?: string,
+    tools?: ToolDefinition[]
+  ): Promise<LLMResponse> {
     switch (this.config.provider) {
       case "openai":
-        return this.openaiChat(messages, system);
+        return this.openaiChat(messages, system, tools);
       case "anthropic":
-        return this.anthropicChat(messages, system);
+        return this.anthropicChat(messages, system, tools);
       case "gemini":
-        return this.geminiChat(messages, system);
+        return this.geminiChat(messages, system, tools);
       case "azure":
-        return this.azureChat(messages, system);
+        return this.azureChat(messages, system, tools);
       case "minimax":
-        return this.minimaxChat(messages, system);
+        return this.minimaxChat(messages, system, tools);
       default:
         throw new Error(`Unknown provider: ${this.config.provider}`);
     }
@@ -70,7 +97,8 @@ export class LLMProviderClient {
 
   private async openaiChat(
     messages: Array<{ role: string; content: string }>,
-    system?: string
+    system?: string,
+    tools?: ToolDefinition[]
   ): Promise<LLMResponse> {
     const url = this.config.baseUrl || "https://api.openai.com/v1/chat/completions";
 
@@ -78,17 +106,30 @@ export class LLMProviderClient {
       ? [{ role: "system", content: system }, ...messages]
       : messages;
 
+    const requestBody: any = {
+      model: this.config.model || "gpt-4o",
+      messages: allMessages,
+      max_tokens: 4096,
+    };
+
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools.map(t => ({
+        type: "function",
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        },
+      }));
+    }
+
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${this.config.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: this.config.model || "gpt-4o",
-        messages: allMessages,
-        max_tokens: 4096,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -97,14 +138,30 @@ export class LLMProviderClient {
     }
 
     const data = await response.json() as {
-      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+      choices?: Array<{
+        message?: { content?: string; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> };
+        finish_reason?: string;
+      }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
 
     const choice = data.choices?.[0];
+    const message = choice?.message;
+
+    // Extract tool calls if present
+    let tool_calls: ToolCall[] | undefined;
+    if (message?.tool_calls && message.tool_calls.length > 0) {
+      tool_calls = message.tool_calls.map(tc => ({
+        id: tc.id || `tc-${Date.now()}`,
+        name: tc.function?.name || "unknown",
+        arguments: tc.function?.arguments ? JSON.parse(tc.function.arguments) : {},
+      }));
+    }
+
     return {
-      content: choice?.message?.content || "⚠️ 无响应",
+      content: message?.content || "⚠️ 无响应",
       stop_reason: choice?.finish_reason || undefined,
+      tool_calls,
       usage: {
         input_tokens: data.usage?.prompt_tokens,
         output_tokens: data.usage?.completion_tokens,
@@ -116,7 +173,8 @@ export class LLMProviderClient {
 
   private async anthropicChat(
     messages: Array<{ role: string; content: string }>,
-    system?: string
+    system?: string,
+    tools?: ToolDefinition[]
   ): Promise<LLMResponse> {
     const url = this.config.baseUrl || "https://api.anthropic.com/v1/messages";
 
@@ -131,6 +189,15 @@ export class LLMProviderClient {
 
     if (system) {
       payload.system = system;
+    }
+
+    // Add tools if provided (Anthropic uses tools format)
+    if (tools && tools.length > 0) {
+      payload.tools = tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        input: t.parameters,
+      }));
     }
 
     const response = await fetch(url, {
@@ -149,7 +216,7 @@ export class LLMProviderClient {
     }
 
     const data = await response.json() as {
-      content?: Array<{ text: string }>;
+      content?: Array<{ type?: string; text?: string; name?: string; input?: any; id?: string }>;
       usage?: { input_tokens?: number; output_tokens?: number };
       stop_reason?: string;
       error?: { type?: string; message?: string };
@@ -168,9 +235,29 @@ export class LLMProviderClient {
       };
     }
 
+    // Extract text content and tool calls
+    let textContent = "";
+    let tool_calls: ToolCall[] | undefined;
+
+    if (data.content) {
+      for (const block of data.content) {
+        if (block.type === "text") {
+          textContent += block.text || "";
+        } else if (block.type === "tool_use") {
+          if (!tool_calls) tool_calls = [];
+          tool_calls.push({
+            id: block.id || `tc-${Date.now()}`,
+            name: block.name || "unknown",
+            arguments: block.input || {},
+          });
+        }
+      }
+    }
+
     return {
-      content: data.content?.[0]?.text || "⚠️ 无响应",
+      content: textContent || "⚠️ 无响应",
       stop_reason: data.stop_reason || "end_turn",
+      tool_calls,
       usage: {
         input_tokens: data.usage?.input_tokens,
         output_tokens: data.usage?.output_tokens,
@@ -182,8 +269,11 @@ export class LLMProviderClient {
 
   private async geminiChat(
     messages: Array<{ role: string; content: string }>,
-    system?: string
+    system?: string,
+    _tools?: ToolDefinition[]
   ): Promise<LLMResponse> {
+    // Gemini tools support would require function declarations format
+    // For now, we'll skip tool support for Gemini (requires different payload structure)
     const model = this.config.model || "gemini-1.5-flash";
     const url = this.config.baseUrl || `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
@@ -214,12 +304,31 @@ export class LLMProviderClient {
     }
 
     const data = await response.json() as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finish_reason?: string }>;
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string; functionCall?: { name?: string; args?: any } }> }; finish_reason?: string }>;
     };
 
+    // Extract text and function calls
+    let textContent = "";
+    let tool_calls: ToolCall[] | undefined;
+
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    for (const part of parts) {
+      if (part.text) {
+        textContent += part.text;
+      } else if (part.functionCall) {
+        if (!tool_calls) tool_calls = [];
+        tool_calls.push({
+          id: `tc-${Date.now()}`,
+          name: part.functionCall.name || "unknown",
+          arguments: part.functionCall.args || {},
+        });
+      }
+    }
+
     return {
-      content: data.candidates?.[0]?.content?.parts?.[0]?.text || "⚠️ 无响应",
+      content: textContent || "⚠️ 无响应",
       stop_reason: data.candidates?.[0]?.finish_reason || undefined,
+      tool_calls,
     };
   }
 
@@ -227,7 +336,8 @@ export class LLMProviderClient {
 
   private async azureChat(
     messages: Array<{ role: string; content: string }>,
-    system?: string
+    system?: string,
+    tools?: ToolDefinition[]
   ): Promise<LLMResponse> {
     if (!this.config.baseUrl) {
       throw new Error("Azure OpenAI requires baseUrl (deployment endpoint)");
@@ -237,16 +347,29 @@ export class LLMProviderClient {
       ? [{ role: "system", content: system }, ...messages]
       : messages;
 
+    const requestBody: any = {
+      messages: allMessages,
+      max_tokens: 4096,
+    };
+
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools.map(t => ({
+        type: "function",
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        },
+      }));
+    }
+
     const response = await fetch(this.config.baseUrl, {
       method: "POST",
       headers: {
         "api-key": this.config.apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        messages: allMessages,
-        max_tokens: 4096,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -255,12 +378,28 @@ export class LLMProviderClient {
     }
 
     const data = await response.json() as {
-      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+      choices?: Array<{
+        message?: { content?: string; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> };
+        finish_reason?: string;
+      }>;
     };
 
+    const choice = data.choices?.[0];
+    const message = choice?.message;
+
+    let tool_calls: ToolCall[] | undefined;
+    if (message?.tool_calls && message.tool_calls.length > 0) {
+      tool_calls = message.tool_calls.map(tc => ({
+        id: tc.id || `tc-${Date.now()}`,
+        name: tc.function?.name || "unknown",
+        arguments: tc.function?.arguments ? JSON.parse(tc.function.arguments) : {},
+      }));
+    }
+
     return {
-      content: data.choices?.[0]?.message?.content || "⚠️ 无响应",
-      stop_reason: data.choices?.[0]?.finish_reason || undefined,
+      content: message?.content || "⚠️ 无响应",
+      stop_reason: choice?.finish_reason || undefined,
+      tool_calls,
     };
   }
 
@@ -268,7 +407,8 @@ export class LLMProviderClient {
 
   private async minimaxChat(
     messages: Array<{ role: string; content: string }>,
-    system?: string
+    system?: string,
+    tools?: ToolDefinition[]
   ): Promise<LLMResponse> {
     // MiniMax uses OpenAI-compatible API
     const url = this.config.baseUrl || "https://api.minimax.chat/v1/chat/completions";
@@ -277,17 +417,30 @@ export class LLMProviderClient {
       ? [{ role: "system", content: system }, ...messages]
       : messages;
 
+    const requestBody: any = {
+      model: this.config.model || "MiniMax-01",
+      messages: allMessages,
+      max_tokens: 4096,
+    };
+
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools.map(t => ({
+        type: "function",
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        },
+      }));
+    }
+
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${this.config.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: this.config.model || "MiniMax-01",
-        messages: allMessages,
-        max_tokens: 4096,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -296,14 +449,29 @@ export class LLMProviderClient {
     }
 
     const data = await response.json() as {
-      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+      choices?: Array<{
+        message?: { content?: string; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> };
+        finish_reason?: string;
+      }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
 
     const choice = data.choices?.[0];
+    const message = choice?.message;
+
+    let tool_calls: ToolCall[] | undefined;
+    if (message?.tool_calls && message.tool_calls.length > 0) {
+      tool_calls = message.tool_calls.map(tc => ({
+        id: tc.id || `tc-${Date.now()}`,
+        name: tc.function?.name || "unknown",
+        arguments: tc.function?.arguments ? JSON.parse(tc.function.arguments) : {},
+      }));
+    }
+
     return {
-      content: choice?.message?.content || "⚠️ 无响应",
+      content: message?.content || "⚠️ 无响应",
       stop_reason: choice?.finish_reason || undefined,
+      tool_calls,
       usage: {
         input_tokens: data.usage?.prompt_tokens,
         output_tokens: data.usage?.completion_tokens,
