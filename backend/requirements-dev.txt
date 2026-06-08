@@ -1,0 +1,6 @@
+# Development dependencies
+ruff>=0.1.0
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+httpx>=0.25.0  # For test client
+coverage>=7.0.0

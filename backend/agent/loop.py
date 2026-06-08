@@ -2,12 +2,10 @@
 Agent Loop
 State machine driven agent processing with MessageBus integration
 """
-import asyncio
 import logging
 from enum import Enum, auto
-from typing import Optional, Any
 
-from ..bus.queue import MessageBus, InboundMessage, OutboundMessage
+from ..bus.queue import InboundMessage, MessageBus, OutboundMessage
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +58,7 @@ class AgentLoop:
 
         # Processing state
         self._running = False
-        self._current_session: Optional[str] = None
+        self._current_session: str | None = None
 
     async def run(self) -> None:
         """Main agent loop - runs until stopped"""
@@ -90,6 +88,19 @@ class AgentLoop:
         self._running = False
 
     async def _process_message(self, msg: InboundMessage) -> None:
+        """Process a message through the state machine with context injection"""
+        from .context import ContextManager
+
+        ctx_manager = ContextManager(
+            workspace_id=msg.workspace_id,
+            session_id=msg.session_id,
+            metadata={"channel": msg.channel, "sender": msg.sender_id},
+        )
+
+        async with ctx_manager:
+            await self._process_message_inner(msg)
+
+    async def _process_message_inner(self, msg: InboundMessage) -> None:
         """Process a message through the state machine"""
         state = TurnState.RESTORE
 
