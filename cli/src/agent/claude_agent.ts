@@ -315,8 +315,16 @@ class ToolHandler {
 /**
  * Parse LLM response to detect failure indicators
  */
-function parseResponse(content: string): { success: boolean; displayContent: string } {
+function parseResponse(content: string, stopReason?: string): { success: boolean; displayContent: string } {
   const trimmed = content.trim();
+
+  // If the API reported an error stop_reason, treat as failure
+  if (stopReason === "error" || stopReason === "incomplete") {
+    return {
+      success: false,
+      displayContent: `❌ API错误: ${stopReason}\n\n${trimmed || "LLM返回错误，请稍后重试。"}`,
+    };
+  }
 
   // Patterns indicating task failure or inability to complete
   const failurePatterns = [
@@ -338,7 +346,6 @@ function parseResponse(content: string): { success: boolean; displayContent: str
     /无法创建/i,
     /无法写入/i,
     /失败了/i,
-    /错误/i,
   ];
 
   // Check if response explicitly says it can't complete the task
@@ -559,7 +566,7 @@ export async function runDirectChat(
       try {
         messages.push({ role: "user", content: input });
         const response = await client.chat(messages, systemPrompt);
-        const parsed = parseResponse(response.content);
+        const parsed = parseResponse(response.content, response.stop_reason);
         console.log(`\n${parsed.displayContent}\n`);
         messages.push({ role: "assistant", content: response.content });
       } catch (e: any) {

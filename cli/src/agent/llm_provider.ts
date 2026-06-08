@@ -14,10 +14,12 @@ interface LLMConfig {
 
 interface LLMResponse {
   content: string;
+  stop_reason?: string;
   usage?: {
     input_tokens?: number;
     output_tokens?: number;
   };
+  error?: string;
 }
 
 export class LLMProviderClient {
@@ -95,12 +97,14 @@ export class LLMProviderClient {
     }
 
     const data = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
 
+    const choice = data.choices?.[0];
     return {
-      content: data.choices?.[0]?.message?.content || "⚠️ 无响应",
+      content: choice?.message?.content || "⚠️ 无响应",
+      stop_reason: choice?.finish_reason || undefined,
       usage: {
         input_tokens: data.usage?.prompt_tokens,
         output_tokens: data.usage?.completion_tokens,
@@ -147,10 +151,26 @@ export class LLMProviderClient {
     const data = await response.json() as {
       content?: Array<{ text: string }>;
       usage?: { input_tokens?: number; output_tokens?: number };
+      stop_reason?: string;
+      error?: { type?: string; message?: string };
     };
+
+    // Check for API errors
+    if (data.error) {
+      return {
+        content: "",
+        stop_reason: "error",
+        error: data.error.message || `Anthropic API Error: ${data.error.type}`,
+        usage: {
+          input_tokens: data.usage?.input_tokens,
+          output_tokens: data.usage?.output_tokens,
+        },
+      };
+    }
 
     return {
       content: data.content?.[0]?.text || "⚠️ 无响应",
+      stop_reason: data.stop_reason || "end_turn",
       usage: {
         input_tokens: data.usage?.input_tokens,
         output_tokens: data.usage?.output_tokens,
@@ -194,11 +214,12 @@ export class LLMProviderClient {
     }
 
     const data = await response.json() as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finish_reason?: string }>;
     };
 
     return {
       content: data.candidates?.[0]?.content?.parts?.[0]?.text || "⚠️ 无响应",
+      stop_reason: data.candidates?.[0]?.finish_reason || undefined,
     };
   }
 
@@ -234,11 +255,12 @@ export class LLMProviderClient {
     }
 
     const data = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
     };
 
     return {
       content: data.choices?.[0]?.message?.content || "⚠️ 无响应",
+      stop_reason: data.choices?.[0]?.finish_reason || undefined,
     };
   }
 
@@ -274,12 +296,14 @@ export class LLMProviderClient {
     }
 
     const data = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
 
+    const choice = data.choices?.[0];
     return {
-      content: data.choices?.[0]?.message?.content || "⚠️ 无响应",
+      content: choice?.message?.content || "⚠️ 无响应",
+      stop_reason: choice?.finish_reason || undefined,
       usage: {
         input_tokens: data.usage?.prompt_tokens,
         output_tokens: data.usage?.completion_tokens,
