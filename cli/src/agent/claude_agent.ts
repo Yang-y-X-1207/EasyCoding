@@ -290,7 +290,16 @@ export async function runDirectChat(
 
   try {
     while (true) {
-      const input = await question("You: ");
+      let input: string;
+      try {
+        input = await question("You: ");
+      } catch (e: any) {
+        if (e.code === 'ERR_USE_AFTER_CLOSE') {
+          console.log("\n\n❌ 输入流已关闭，程序退出");
+          break;
+        }
+        throw e;
+      }
 
       if (!input.trim()) continue;
 

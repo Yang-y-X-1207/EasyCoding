@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(node *)",
+      "Bash(git init *)",
+      "Bash(git remote *)",
+      "Bash(cp \"C:\\\\Users\\\\57826\\\\.claude\\\\plans\\\\steady-hugging-brook.md\" \"C:\\\\Users\\\\57826\\\\IdeaProjects\\\\EasyCoding\\\\PRD.md\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(git log *)",
+      "Bash(gh pr *)",
+      "Bash(where gh *)",
+      "Bash(git checkout *)",
+      "Bash(git cherry-pick *)",
+      "Bash(git reset *)",
+      "Bash(git pull *)",
+      "Bash(git merge *)",
+      "Bash(sed -i 's/description=\"AI Coding Assistant CLI Backend with Multi-Channel + Workspace/description=\"AI Coding Assistant CLI Backend with Multi-Channel + Workspace + Git\"/g' backend/main.py)",
+      "Bash(sed -i 's/from api.routes import chat, health, session, task, channel, workspace/from api.routes import chat, health, session, task, channel, workspace, git/g' backend/main.py)",
+      "Bash(sed -i 's/app.include_router\\(workspace.router, prefix=\"\\\\\\\\/api\\\\\\\\/v1\", tags=\\\\[\"workspace\"\\\\]/app.include_router\\(workspace.router, prefix=\"\\\\\\\\/api\\\\\\\\/v1\", tags=[\"workspace\"]\\)\\\\napp.include_router\\(git.router, prefix=\"\\\\\\\\/api\\\\\\\\/v1\", tags=[\"git\"]/g' backend/main.py)",
+      "Bash(python -m py_compile services/memory_service.py services/pr_service.py services/notification_service.py api/routes/memory.py api/routes/git.py main.py)",
+      "Bash(where python *)",
+      "Bash(ls /c/Python*/python.exe)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(pip install *)",
+      "Bash(python -m pip install -r C:/Users/57826/IdeaProjects/EasyCoding/backend/requirements.txt)",
+      "Bash(/c/Users/57826/AppData/Local/Programs/Python/Python313/python.exe -m pip install -r C:/Users/57826/IdeaProjects/EasyCoding/backend/requirements.txt)",
+      "Bash(/c/Users/57826/AppData/Local/Programs/Python/Python313/python.exe *)",
+      "Bash(curl -s http://localhost:8080/health)",
+      "Bash(PYTHONPATH=C:/Users/57826/IdeaProjects/EasyCoding/backend /c/Users/57826/AppData/Local/Programs/Python/Python313/python.exe -m uvicorn main:app --host 0.0.0.0 --port 8080)",
+      "Bash(curl *)",
+      "Bash(MINIMAX_API_KEY=sk-cp-QoObYy5XygU4o9XWPLGE8S_hsmaG_2eFeZDpZ6sQWoWkU0MeSLkzLfHhZW8-HlU914rNPruoB1sfGFy9eVktRlLsNRh7xocCx7RLTCKGjxxMru4qKfNLqVw node dist/index.js direct -p C:/Users/57826/IdeaProjects/EasyCoding)",
+      "Bash(MINIMAX_API_KEY=sk-cp-QoObYy5XygU4o9XWPLGE8S_hsmaG_2eFeZDpZ6sQWoWkU0MeSLkzLfHhZW8-HlU914rNPruoB1sfGFy9eVktRlLsNRh7xocCx7RLTCKGjxxMru4qKfNLqVw node -e ' *)"
+    ]
+  }
+}

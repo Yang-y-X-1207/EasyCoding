@@ -48,10 +48,14 @@ MINIMAX_MODEL=abab5.5-chat
 
 ```bash
 # 直接对话模式 (Claude Code 风格)
-node dist/index.js direct -p /你的项目路径
+cd cli
+node dist/index.js direct -p .
 
-# 示例
-node dist/index.js direct -p ~/my-project
+# Windows 示例 (当前目录)
+node dist/index.js direct -p C:\Users\你的用户名\项目路径
+
+# Linux/Mac 示例
+node dist/index.js direct -p /home/user/my-project
 ```
 
 ---

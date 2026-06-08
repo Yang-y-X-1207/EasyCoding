@@ -1,0 +1,22 @@
+{
+  "session_id": "6b51c505-4be5-477d-a338-90a7ac30fb3f",
+  "account_id": "test-user",
+  "channel": "cli",
+  "agent_id": "default",
+  "messages": [
+    {
+      "role": "user",
+      "content": "I want to create a new FastAPI endpoint for user authentication",
+      "timestamp": "2026-06-06T17:14:52.748235"
+    },
+    {
+      "role": "assistant",
+      "content": "正在分析需求...",
+      "timestamp": "2026-06-06T17:14:52.748252"
+    }
+  ],
+  "context": {},
+  "status": "active",
+  "created_at": "2026-06-06T17:14:52.748203",
+  "updated_at": "2026-06-06T17:14:52.748254"
+}
