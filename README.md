@@ -21,22 +21,27 @@ Coding-CLI 支持多种 LLM 提供商，选择一种配置：
 ```bash
 # MiniMax (推荐国内用户)
 export MINIMAX_API_KEY=sk-cp-xxxxxxxx
+export MINIMAX_MODEL=abab5.5-chat  # 模型名可选
 
 # OpenAI
 export OPENAI_API_KEY=sk-xxxxx
+export OPENAI_MODEL=gpt-4o
 
 # Anthropic (Claude)
 export ANTHROPIC_API_KEY=sk-ant-xxxxx
+export ANTHROPIC_MODEL=claude-sonnet-4-7
 
 # Google Gemini
 export GEMINI_API_KEY=xxxxx
+export GEMINI_MODEL=gemini-1.5-flash
 ```
 
-或创建 `.env` 文件：
+或创建 `.env` 文件（放在 `cli/` 目录下）：
 
 ```bash
-# 在项目根目录创建 .env
+# cli/.env
 MINIMAX_API_KEY=sk-cp-xxxxxxxx
+MINIMAX_MODEL=abab5.5-chat
 ```
 
 ### 3. 运行
